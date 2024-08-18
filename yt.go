@@ -85,16 +85,17 @@ func getComments(service *youtube.Service, videoID string) []string {
 }
 
 func parseDuration(durationStr string) (int, error) {
-	matches := regexp.MustCompile(`(?i)PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?`).FindStringSubmatch(durationStr)
+	matches := regexp.MustCompile(`(?i)P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?`).FindStringSubmatch(durationStr)
 	if len(matches) == 0 {
 		return 0, fmt.Errorf("invalid duration string: %s", durationStr)
 	}
 
-	hours, _ := strconv.Atoi(matches[1])
-	minutes, _ := strconv.Atoi(matches[2])
-	seconds, _ := strconv.Atoi(matches[3])
+	days, _ := strconv.Atoi(matches[1])
+	hours, _ := strconv.Atoi(matches[2])
+	minutes, _ := strconv.Atoi(matches[3])
+	seconds, _ := strconv.Atoi(matches[4])
 
-	return hours*60 + minutes + seconds/60, nil
+	return days*60*24 + hours*60 + minutes + seconds/60, nil
 }
 
 func mainFunction(url string, options *Options) {
