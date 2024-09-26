@@ -97,6 +97,19 @@ func parseDuration(durationStr string) (int, error) {
 	return hours*60 + minutes + seconds/60, nil
 }
 
+func getDescription(service *youtube.Service, videoID string) (string, error) {
+    call := service.Videos.List([]string{"snippet"}).Id(videoID)
+    response, err := call.Do()
+    if err != nil {
+        log.Printf("Error getting video details: %v", err)
+        return "", err
+    }
+    if len(response.Items) == 0 {
+        return "", fmt.Errorf("No video found with ID: %s", videoID)
+    }
+    return response.Items[0].Snippet.Description, nil
+}
+
 func mainFunction(url string, options *Options) {
 	home_dir, err := os.UserHomeDir()
 	if err != nil {
@@ -159,6 +172,14 @@ func mainFunction(url string, options *Options) {
 		}
 	}
 
+	var description string
+	if options.Description {
+		description, err = getDescription(service, videoID)
+		if err != nil {
+			log.Printf("Error getting video description: %v", err)
+		}
+	}
+
 	if options.Duration {
 		fmt.Println(durationMinutes)
 	} else if options.Transcript {
@@ -166,6 +187,8 @@ func mainFunction(url string, options *Options) {
 	} else if options.Comments {
 		jsonComments, _ := json.MarshalIndent(comments, "", "  ")
 		fmt.Println(string(jsonComments))
+	} else if options.Description {
+		fmt.Println(description)
 	} else {
 		output := map[string]interface{}{
 			"transcript": transcriptText,
@@ -182,6 +205,7 @@ type Options struct {
 	Transcript bool
 	Comments   bool
 	Lang       string
+	Description bool
 }
 
 func main() {
@@ -189,6 +213,7 @@ func main() {
 	flag.BoolVar(&options.Duration, "duration", false, "Output only the duration")
 	flag.BoolVar(&options.Transcript, "transcript", false, "Output only the transcript")
 	flag.BoolVar(&options.Comments, "comments", false, "Output the comments on the video")
+	flag.BoolVar(&options.Description, "description", false, "Output the description of the video")
 	flag.StringVar(&options.Lang, "lang", "en", "Language for the transcript (default: English)")
 	flag.Parse()
 
