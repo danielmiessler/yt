@@ -59,26 +59,69 @@ func getTranscript(videoID string) (string, error) {
 	return "", fmt.Errorf("transcript not found")
 }
 
-func getComments(service *youtube.Service, videoID string) []string {
-	var comments []string
+type Comment struct {
+	TopLevel string
+	Replies  []string
+}
 
-	call := service.CommentThreads.List([]string{"snippet", "replies"}).VideoId(videoID).TextFormat("plainText").MaxResults(100)
-	response, err := call.Do()
-	if err != nil {
-		log.Printf("Failed to fetch comments: %v", err)
-		return comments
+func getComments(service *youtube.Service, videoID string, threshold int, allReplies bool) []Comment {
+	var comments []Comment
+
+	var count = threshold / 100
+	var maxResults = 100
+
+	if threshold < 100 {
+		count = 1
+		maxResults = threshold
 	}
 
-	for _, item := range response.Items {
-		topLevelComment := item.Snippet.TopLevelComment.Snippet.TextDisplay
-		comments = append(comments, topLevelComment)
+	var pageToken string
 
-		if item.Replies != nil {
-			for _, reply := range item.Replies.Comments {
-				replyText := reply.Snippet.TextDisplay
-				comments = append(comments, "    - "+replyText)
-			}
+	for i := 0; i <= count; i++ {
+
+		call := service.CommentThreads.List([]string{"snippet", "replies"}).VideoId(videoID).TextFormat("plainText").MaxResults(int64(maxResults)).PageToken(pageToken)
+		response, err := call.Do()
+		if err != nil {
+			log.Printf("Failed to fetch comments: %v", err)
+			return nil
 		}
+
+		for _, item := range response.Items {
+            var cComment Comment
+
+			topLevelComment := item.Snippet.TopLevelComment.Snippet.TextDisplay
+			cComment.TopLevel = topLevelComment
+
+			if allReplies && item.Snippet.TotalReplyCount > 5 {
+                replies_call := service.Comments.List([]string{"snippet"}).ParentId(item.Id)
+				replies_response, err := replies_call.Do()
+				if err == nil {
+                    // TODO: better error handling!
+                    for _, reply := range replies_response.Items {
+                        replyText := reply.Snippet.TextDisplay
+                        cComment.Replies = append(cComment.Replies, replyText)
+                    }
+				}
+			} else if item.Replies != nil {
+                for _, reply := range item.Replies.Comments {
+                    replyText := reply.Snippet.TextDisplay
+                    cComment.Replies = append(cComment.Replies, replyText)
+                }
+            }
+
+			comments = append(comments, cComment)
+
+		}
+
+		pageToken = response.NextPageToken
+		if pageToken == "" {
+			break
+		}
+
+	}
+
+	if threshold < len(comments) {
+		return comments[:threshold]
 	}
 
 	return comments
@@ -138,9 +181,9 @@ func mainFunction(url string, options *Options) {
 		log.Fatalf("Error parsing video duration: %v", err)
 	}
 
-	var comments []string
+	var comments []Comment
 	if options.Comments {
-		comments = getComments(service, videoID)
+		comments = getComments(service, videoID, options.CommentsLength, options.AllReplies)
 	}
 	var transcriptText string
 	transcript, err := getTranscript(videoID)
@@ -178,10 +221,12 @@ func mainFunction(url string, options *Options) {
 }
 
 type Options struct {
-	Duration   bool
-	Transcript bool
-	Comments   bool
-	Lang       string
+	Duration       bool
+	Transcript     bool
+	Comments       bool
+	CommentsLength int
+	AllReplies     bool
+	Lang           string
 }
 
 func main() {
@@ -190,6 +235,10 @@ func main() {
 	flag.BoolVar(&options.Transcript, "transcript", false, "Output only the transcript")
 	flag.BoolVar(&options.Comments, "comments", false, "Output the comments on the video")
 	flag.StringVar(&options.Lang, "lang", "en", "Language for the transcript (default: English)")
+
+	flag.IntVar(&options.CommentsLength, "length", 100, "Length of comments to be returned")
+	flag.BoolVar(&options.AllReplies, "all", false, "whether to include all possible replies to each comment (Signficiantly Slower)")
+
 	flag.Parse()
 
 	if flag.NArg() == 0 {
